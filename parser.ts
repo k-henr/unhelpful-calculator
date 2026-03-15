@@ -1,4 +1,9 @@
-import { CalculatorError, Expression, LazyError } from "./calculator";
+import {
+    CalculatorContext,
+    CalculatorError,
+    Expression,
+    LazyError,
+} from "./calculator";
 
 export class Parser {
     inputString: string;
@@ -25,10 +30,11 @@ export class Parser {
         this.inputString = inputString;
     }
 
-    evaluate(expression: Expression): number {
+    evaluate(expression: Expression, context: CalculatorContext): number {
         this.tokenize();
+        // console.log([...this.tokens!]);
         this.buildTree();
-        return this.evaluateTree(expression, this.astTree);
+        return this.evaluateTree(expression, context, this.astTree);
     }
 
     /**
@@ -37,7 +43,8 @@ export class Parser {
     tokenize() {
         const matchedTokens = this.inputString.matchAll(tokenizer);
 
-        const tokens: (Token | VariableToken | NumberToken)[] = [];
+        const tokens: (Token | VariableToken | NumberToken | FunctionToken)[] =
+            [];
         for (const match of matchedTokens) {
             const { groups } = match;
             if (!groups) continue; // Ignore empty matches to get rid of warning
@@ -50,6 +57,15 @@ export class Parser {
 
             // Add the token, and additional info if needed
             switch (type) {
+                case "FUN":
+                    tokens.unshift({
+                        type,
+                        functionName: groups.FNNAME,
+                        functionArguments: groups.FNARGS.split(",").map((e) =>
+                            e.trim(),
+                        ),
+                    });
+                    break;
                 case "VAR":
                     tokens.unshift({ type, variableName: groups[type] });
                     break;
@@ -157,6 +173,10 @@ export class Parser {
         if (t.type === "VAR") {
             return (t as VariableToken).variableName;
         }
+        if (t.type === "FUN") {
+            const token: FunctionToken = t as FunctionToken;
+            return token; // They have the exact same signature atm ¯\_(ツ)_/¯
+        }
         if (t.type === "LPAREN") {
             const expr = this.getExpression();
             this.expect("RPAREN");
@@ -167,15 +187,15 @@ export class Parser {
 
     evaluateTree(
         expression: Expression,
+        context: CalculatorContext,
         node: DirtyAstTreeNode | undefined,
     ): number {
         if (node === undefined) return 0;
 
         if (typeof node === "string") {
-            const dependency =
-                expression.calculator.globalContext.tryGetVariable(node);
+            const dependency = context.variables[node];
             if (!dependency)
-                throw new CalculatorError(`Couldn't find field '${node}'!`);
+                throw new CalculatorError(`Variable "${node}" not found!`);
 
             dependency.usedBy.add(expression);
             return dependency.value;
@@ -183,10 +203,47 @@ export class Parser {
         if (typeof node === "number") {
             return Number(node);
         }
+
+        // Kinda yucky check for if it's a function node
+        if ("functionName" in node) {
+            node = node as FunctionNode;
+            // Get the referenced expression
+            const e = context.functions[node.functionName];
+            if (!e)
+                throw new CalculatorError(
+                    `Function "${node.functionName}" not found!`,
+                );
+            if (node.functionArguments.length !== e.arguments.length)
+                throw new CalculatorError(
+                    `Argument count of ${e.definedFunction} is ${node.functionArguments.length}; expected ${e.arguments.length}`,
+                );
+
+            // Mark this expression as using the function's expression
+            e.usedBy.add(expression);
+
+            // Copy the context and overwrite the function arguments
+            const functionContext: CalculatorContext = {
+                variables: { ...context.variables },
+                functions: { ...context.functions },
+            };
+
+            for (const i in e.arguments) {
+                // Parse argument expression
+                functionContext.variables[e.arguments[i]] = new Expression(
+                    expression.calculator,
+                    node.functionArguments[i],
+                    false,
+                );
+            }
+
+            // Evaluate and return the function's value
+            return e.getValue(expression, functionContext);
+        }
+
         node = node as AstTreeNode;
 
-        const v1 = this.evaluateTree(expression, node.value1);
-        const v2 = this.evaluateTree(expression, node.value2);
+        const v1 = this.evaluateTree(expression, context, node.value1);
+        const v2 = this.evaluateTree(expression, context, node.value2);
 
         const v1Len = String(v1).length;
         const v2Len = String(v2).length;
@@ -277,7 +334,7 @@ export class Parser {
                         ],
                         callback: () => {
                             expression.complexityMultiplier *= 0.75;
-                            expression.evaluate();
+                            expression.update();
                         },
                     },
                 ],
@@ -288,7 +345,11 @@ export class Parser {
 
 // This is where tokens types are defined, by a matcher and a type
 const tokenPatterns: { pattern: RegExp; type: TokenType }[] = [
-    { pattern: /(?<VAR>[A-Za-z]\w*)/, type: "VAR" },
+    {
+        pattern: /(?<FUN>(?<FNNAME>[a-z]\w*)\s*\(\s*(?<FNARGS>.*)\s*\))/,
+        type: "FUN",
+    },
+    { pattern: /(?<VAR>[a-z]\w*)/, type: "VAR" },
     { pattern: /(?<NUM>\d+(\.\d+)?)/, type: "NUM" },
     { pattern: /(?<ADD>\+)/, type: "ADD" },
     { pattern: /(?<SUB>-)/, type: "SUB" },
@@ -303,10 +364,11 @@ const tokenPatterns: { pattern: RegExp; type: TokenType }[] = [
 // Combine the token matchers to get a single tokenizer
 const tokenizer = new RegExp(
     tokenPatterns.map(({ pattern }) => pattern.source).join("|"),
-    "g",
+    "gim",
 );
 
 type TokenType =
+    | "FUN"
     | "VAR"
     | "NUM"
     | "ADD"
@@ -323,10 +385,18 @@ type Token = {
 };
 type NumberToken = Token & { value: number };
 type VariableToken = Token & { variableName: string };
+type FunctionToken = Token & {
+    functionName: string;
+    functionArguments: string[];
+};
 
 type AstTreeNode = {
     operator: TokenType;
     value1?: DirtyAstTreeNode;
     value2?: DirtyAstTreeNode;
 };
-type DirtyAstTreeNode = AstTreeNode | number | string;
+type FunctionNode = {
+    functionName: string;
+    functionArguments: string[];
+};
+type DirtyAstTreeNode = AstTreeNode | number | string | FunctionNode;

@@ -19,42 +19,31 @@ export class LazyError extends CalculatorError {
     }
 }
 
-class CalculatorContext {
-    variables: { [key: string]: Expression } = {};
-    functions: { [key: string]: Expression } = {};
-
-    addField = (name: string, expression: Expression) => {
-        this.variables[name] = expression;
-    };
-
-    removeField = (name: string) => {
-        delete this.variables[name];
-    };
-
-    tryGetVariable = (name: string): Expression | null => {
-        return this.variables[name];
-    };
-}
+export type CalculatorContext = {
+    variables: { [key: string]: Expression };
+    functions: { [key: string]: Expression };
+};
 
 export class Expression {
     calculator: Calculator;
 
-    element: HTMLElement;
-    resultElement: HTMLElement;
-    errorWrapper: HTMLElement;
-    errorPopup: HTMLElement;
+    element: HTMLElement | null = null;
+    resultElement: HTMLElement | null = null;
+    errorWrapper: HTMLElement | null = null;
+    errorPopup: HTMLElement | null = null;
 
     definedFunction: string | null = null;
     arguments: string[] = []; // Stores function arguments if this is a function. Kinda yucky
-    fnDef: string = ""; // Stores the function definition if this is a function. See above ^
 
     definedVariable: string | null = null;
 
+    expressionContent: string = ""; // Just the epxression itself, i.e. "5+x" in "f(x)=5+x"
     expressionString: string; // Stores the full string of this expression, including declarations
     value: number;
 
     // Gradually lowers when retrying
     complexityMultiplier = 1;
+    coffeeMode: boolean;
 
     usedBy: Set<Expression> = new Set();
 
@@ -66,81 +55,97 @@ export class Expression {
         "#error-button-template",
     ) as HTMLTemplateElement;
 
-    constructor(calculator: Calculator, expressionString: string) {
+    constructor(
+        calculator: Calculator,
+        expressionString: string,
+        addVisual: boolean = true,
+        coffeeMode: boolean = false, // whether laziness is possible
+    ) {
         this.calculator = calculator;
         this.expressionString = expressionString;
+
+        this.coffeeMode = coffeeMode;
         this.value = 0;
 
-        this.element = (
-            this.template.content.cloneNode(true) as HTMLElement
-        ).querySelector(".expression")!;
+        if (coffeeMode) this.complexityMultiplier = 0;
 
-        this.resultElement = this.element.querySelector(".expression-result")!;
-        if (this.resultElement === null)
-            throw new CalculatorError(
-                "Result element not found on expression template!",
-            );
+        if (addVisual) {
+            this.element = (
+                this.template.content.cloneNode(true) as HTMLElement
+            ).querySelector(".expression")!;
 
-        this.errorWrapper = this.element.querySelector(
-            ".expression-error-wrapper",
-        )!;
-        if (this.errorWrapper === null)
-            throw new CalculatorError(
-                "Error element not found on expression template!",
-            );
+            this.resultElement =
+                this.element.querySelector(".expression-result")!;
+            if (this.resultElement === null)
+                throw new CalculatorError(
+                    "Result element not found on expression template!",
+                );
 
-        this.errorPopup = this.element.querySelector(
-            ".expression-error-popup",
-        )!;
-        if (this.errorPopup === null)
-            throw new CalculatorError(
-                "Error popup not found on expression template!",
-            );
+            this.errorWrapper = this.element.querySelector(
+                ".expression-error-wrapper",
+            )!;
+            if (this.errorWrapper === null)
+                throw new CalculatorError(
+                    "Error element not found on expression template!",
+                );
 
-        // Add a listener to set the contents of the expression when it changes
-        (this.element.querySelector(
-            ".expression-edit-field",
-        ) as HTMLInputElement)!.onchange = (e) => {
-            const target = e.target as HTMLInputElement;
-            this.setContent(target.value);
-        };
+            this.errorPopup = this.element.querySelector(
+                ".expression-error-popup",
+            )!;
+            if (this.errorPopup === null)
+                throw new CalculatorError(
+                    "Error popup not found on expression template!",
+                );
 
-        // Add a listener for opening an error screen
-        this.errorWrapper.onclick = () => {
-            this.errorPopup.classList.toggle("hidden");
-        };
+            // Add a listener to set the contents of the expression when it changes
+            (this.element.querySelector(
+                ".expression-edit-field",
+            ) as HTMLInputElement)!.onchange = (e) => {
+                const target = e.target as HTMLInputElement;
+                this.setContent(target.value);
+            };
 
-        // Add a listener for removing the expression when the cross is clicked
-        (this.element.querySelector(
-            ".remove-expression",
-        ) as HTMLElement)!.onclick = () => {
-            calculator.removeExpression(this);
-        };
+            // Add a listener for opening an error screen
+            this.errorWrapper.onclick = () => {
+                this.errorPopup?.classList.toggle("hidden");
+            };
 
-        // Add the graphical expression to the DOM
-        calculator.expressionListElement.appendChild(this.element);
+            // Add a listener for removing the expression when the cross is clicked
+            (this.element.querySelector(
+                ".remove-expression",
+            ) as HTMLElement)!.onclick = () => {
+                calculator.removeExpression(this);
+            };
 
-        this.evaluate();
+            // Add the graphical expression to the DOM
+            calculator.expressionListElement.appendChild(this.element);
+        }
+
+        this.setContent(expressionString);
     }
 
     showError = (errorText: string) => {
-        this.errorWrapper.classList.remove("hidden");
-        this.errorPopup.innerText = errorText;
+        this.errorWrapper?.classList.remove("hidden");
+        if (this.errorPopup) this.errorPopup.innerText = errorText;
     };
 
     hideError = () => {
-        this.errorWrapper.classList.add("hidden");
-        this.errorPopup.classList.add("hidden");
-        this.errorPopup.innerHTML = "";
+        this.errorWrapper?.classList.add("hidden");
+        if (this.errorPopup) {
+            this.errorPopup.innerHTML = "";
+            this.errorPopup.classList.add("hidden");
+        }
     };
 
     showResult = (resultText: string) => {
-        this.resultElement.innerText = resultText;
-        this.resultElement.classList.remove("hidden");
+        if (this.resultElement) {
+            this.resultElement.innerText = resultText;
+            this.resultElement.classList.remove("hidden");
+        }
     };
 
     hideResult = () => {
-        this.resultElement.classList.add("hidden");
+        this.resultElement?.classList.add("hidden");
     };
 
     getRoundedString = (x: number): string => {
@@ -150,10 +155,10 @@ export class Expression {
 
     setContent = (newContent: string) => {
         this.expressionString = newContent;
-        this.evaluate();
+        this.update();
     };
 
-    evaluate = () => {
+    update = () => {
         this.hideError();
         this.hideResult();
 
@@ -170,8 +175,6 @@ export class Expression {
                 /^\s*(?<VRNAME>[a-z]\w*)\s*=\s*(?<VRDEF>.*)$|^\s*(?<FNNAME>[a-z]\w*)\s*\(\s*(?<FNARGS>(?:[a-z]\w*(?:\s*,\s*[a-z]\w*\s*)*)?)\s*\)\s*=\s*(?<FNDEF>.*)/im;
 
             const typeMatch = this.expressionString.match(typeMatcher);
-
-            console.log(typeMatch);
 
             if (typeMatch) {
                 if (!typeMatch.groups)
@@ -204,7 +207,7 @@ export class Expression {
                     this.arguments = groups.FNARGS.split(",").map((e) =>
                         e.trim(),
                     );
-                    this.fnDef = groups.FNDEF;
+                    this.expressionContent = groups.FNDEF;
                 } else {
                     // Was a variable. Compute value, store self in global context
                     const vars = this.calculator.globalContext.variables;
@@ -217,8 +220,11 @@ export class Expression {
                     this.definedVariable = groups.VRNAME;
 
                     // Calculate the value of this expression
-                    const parser = new Parser(groups.VRDEF);
-                    this.value = parser.evaluate(this);
+                    this.expressionContent = groups.VRDEF;
+                    this.value = this.getValue(
+                        this,
+                        this.calculator.globalContext,
+                    );
 
                     // Show the result
                     this.showResult(
@@ -228,17 +234,20 @@ export class Expression {
 
                 // Reevaluate all expressions that used this field
                 for (const user of this.usedBy) {
-                    user.evaluate();
+                    user.update();
                 }
             } else {
-                const parser = new Parser(this.expressionString);
-                this.value = parser.evaluate(this);
+                this.expressionContent = this.expressionString;
+                this.value = this.getValue(this, this.calculator.globalContext);
                 this.showResult(this.getRoundedString(this.value));
             }
 
             // Reset complexity multiplier if parse succeeded
-            this.complexityMultiplier = 1;
+            if (!this.coffeeMode) this.complexityMultiplier = 1;
         } catch (e) {
+            // Don't catch if this expression doesn't have a visual to error on
+            if (!this.element) throw e;
+
             if (e instanceof CalculatorError) {
                 // Set error text to message
                 this.showError("ERROR: " + e.message);
@@ -258,7 +267,7 @@ export class Expression {
                         buttonElement.setAttribute("value", option.name);
                         buttonElement.onclick = option.callback;
 
-                        this.errorPopup.appendChild(button);
+                        this.errorPopup?.appendChild(button);
                     }
                 }
             } else if (e instanceof Error) {
@@ -267,6 +276,16 @@ export class Expression {
             }
         }
     };
+
+    getValue(
+        requestingExpression: Expression,
+        context: CalculatorContext,
+    ): number {
+        return new Parser(this.expressionContent).evaluate(
+            requestingExpression,
+            context,
+        );
+    }
 }
 
 export class Calculator {
@@ -274,7 +293,17 @@ export class Calculator {
 
     // fieldDefinitions: { [key: string]: Expression } = {};
 
-    globalContext: CalculatorContext = new CalculatorContext();
+    globalContext: CalculatorContext = {
+        functions: {},
+        variables: {
+            TAU: new Expression(
+                this,
+                "6.28318530717958647692528676655901",
+                false,
+                true,
+            ),
+        },
+    };
 
     constructor(expressionList: HTMLElement) {
         this.expressionListElement = expressionList;
@@ -292,13 +321,15 @@ export class Calculator {
      * @param expression The expression to remove
      */
     removeExpression(expression: Expression) {
-        // Remove the element
-        this.expressionListElement.removeChild(expression.element);
+        // Remove the element visual
+        if (expression.element)
+            this.expressionListElement.removeChild(expression.element);
 
         // Remove any field definitions from the expression
-        const definedField = expression.definedVariable;
-        if (definedField) {
-            this.globalContext.removeField(definedField);
+        if (expression.definedFunction) {
+            delete this.globalContext.functions[expression.definedFunction];
+        } else if (expression.definedVariable) {
+            delete this.globalContext.functions[expression.definedVariable];
         }
     }
 
@@ -308,13 +339,6 @@ export class Calculator {
      * @param newValue The new content of this expression
      */
     setExpressionContent(expression: Expression, newValue: string) {
-        const definedField = expression.definedVariable;
-
-        // Clear the defined field if there is one
-        if (definedField) {
-            this.globalContext.removeField(definedField);
-        }
-
         expression.setContent(newValue);
     }
 }

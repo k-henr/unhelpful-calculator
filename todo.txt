@@ -1,16 +1,10 @@
-- Functions
-    * Check for functions in the preEval matcher. If it's a function, don't evaluate
-        it and add the expression to the global context's functions
-    * Make the CalculatorContext of a parser be passed in a list to the function
-    * Add FUN as type in the parser for function calls and as an AstNodeType. When
-        constructing the AST tree, store the function arguments (as strings, don't
-        evaluate yet) in the node
-    * When hitting a FUN node, make a new CalculatorContext, parse and evaluate the
-        arguments (which can throw their own errors), then parse the expression that
-        the FUN node points to with this context added in the list
 - Automatically scroll to bottom when adding an expression to keep mouse on button
 - Make the introduction collapsible upwards
 - Add even more laxy error texts and responses
     * At least 6 per operator type
+    * At least 10 possible answers
 - Mobile support
+- Make a favicon
 - Put up on GHP
+- Reevaluate all errored expressions when setting expression content?
+- Smarter rounding for display, taking significant digits into account
