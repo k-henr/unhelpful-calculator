@@ -487,11 +487,29 @@
       );
     }
   };
+  var JSFunctionExpression = class extends Expression {
+    runnable;
+    constructor(calculator2, fnArguments, runnable, addVisual = true, coffeeMode = false) {
+      super(calculator2, "", addVisual, coffeeMode);
+      this.arguments = fnArguments;
+      this.runnable = runnable;
+    }
+    getValue = (requestingExpression, context) => {
+      return this.runnable(requestingExpression, context);
+    };
+  };
   var Calculator = class {
     expressionListElement;
-    // fieldDefinitions: { [key: string]: Expression } = {};
     globalContext = {
-      functions: {},
+      functions: {
+        sin: new JSFunctionExpression(
+          this,
+          ["x"],
+          (e, ctx) => Math.sin(ctx.variables["x"].getValue(e, ctx)),
+          false,
+          true
+        )
+      },
       variables: {
         TAU: new Expression(
           this,

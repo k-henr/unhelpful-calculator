@@ -288,13 +288,43 @@ export class Expression {
     }
 }
 
+// Overrides the expression class to get JS(or TS)-defined functions to the calculator
+class JSFunctionExpression extends Expression {
+    runnable: Function;
+    constructor(
+        calculator: Calculator,
+        fnArguments: string[],
+        runnable: Function,
+        addVisual: boolean = true,
+        coffeeMode: boolean = false, // whether laziness is possible
+    ) {
+        super(calculator, "", addVisual, coffeeMode);
+        this.arguments = fnArguments;
+        this.runnable = runnable;
+    }
+
+    getValue = (
+        requestingExpression: Expression,
+        context: CalculatorContext,
+    ) => {
+        return this.runnable(requestingExpression, context);
+    };
+}
+
 export class Calculator {
     expressionListElement: HTMLElement;
 
-    // fieldDefinitions: { [key: string]: Expression } = {};
-
     globalContext: CalculatorContext = {
-        functions: {},
+        functions: {
+            sin: new JSFunctionExpression(
+                this,
+                ["x"],
+                (e: Expression, ctx: CalculatorContext) =>
+                    Math.sin(ctx.variables["x"].getValue(e, ctx)),
+                false,
+                true,
+            ),
+        },
         variables: {
             TAU: new Expression(
                 this,

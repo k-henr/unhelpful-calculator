@@ -1,3 +1,6 @@
+- Make calculator contexts be passed around in a list instead, so that I don't need
+    to deep-copy a large context with many built-ins
+- Add a bunch of built-ins. Spy on Desmos scientific calc to see what's necessary
 - Automatically scroll to bottom when adding an expression to keep mouse on button
 - Make the introduction collapsible upwards
 - Add even more laxy error texts and responses
