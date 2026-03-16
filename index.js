@@ -22,18 +22,9 @@
       this.inputString = inputString;
     }
     evaluate(requestingExpression, context) {
-      console.log("Entering eval for " + this.inputString);
       this.tokenize();
-      console.log([...this.tokens]);
       this.buildTree();
-      console.log(this.astTree);
-      const result = this.evaluateTree(
-        requestingExpression,
-        context,
-        this.astTree
-      );
-      console.log("Exiting eval for " + this.inputString);
-      return result;
+      return this.evaluateTree(requestingExpression, context, this.astTree);
     }
     /**
      * Tokenize this parser's expression.
@@ -162,10 +153,7 @@
     }
     evaluateTree(requestingExpression, context, node) {
       if (node === void 0) return 0;
-      console.log("Evaluating node on rquest by:");
-      console.log(requestingExpression);
       if (typeof node === "string") {
-        console.log("Node was a variable");
         const dependency = context.getVariable(node);
         if (!dependency)
           throw new CalculatorError(`Variable "${node}" not found!`);
@@ -199,17 +187,10 @@
             false,
             requestingExpression
           );
-          console.log("A");
         }
         const functionContext = context.copy();
         functionContext.addLayer(functionLayer);
-        console.log(
-          "Stepping into function " + node.functionName + " with following requester:"
-        );
-        console.log(requestingExpression);
-        const result = e.getValue(requestingExpression, functionContext);
-        console.log("Stepping out of function " + node.functionName);
-        return result;
+        return e.getValue(requestingExpression, functionContext);
       }
       node = node;
       const v1 = this.evaluateTree(
@@ -248,7 +229,6 @@
           );
           return v1 - v2;
         case "DIV":
-          console.log("Evaluating DIV");
           this.checkGiveUp(requestingExpression, 0.5 * v2Len, [
             "Division is difficult",
             "Forgot which one was the numerator",
@@ -305,8 +285,6 @@
             {
               name: buttonContents[Math.floor(Math.random() * buttonContents.length)],
               callback: () => {
-                console.log("RETRYING");
-                console.log(expression);
                 expression.complexityMultiplier *= 0.75;
                 expression.update();
               }

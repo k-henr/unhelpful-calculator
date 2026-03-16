@@ -35,18 +35,11 @@ export class Parser {
         requestingExpression: Expression,
         context: CalculatorContext,
     ): number {
-        console.log("Entering eval for " + this.inputString);
         this.tokenize();
-        console.log([...this.tokens!]);
+        // console.log([...this.tokens!]);
         this.buildTree();
-        console.log(this.astTree);
-        const result = this.evaluateTree(
-            requestingExpression,
-            context,
-            this.astTree,
-        );
-        console.log("Exiting eval for " + this.inputString);
-        return result;
+        // console.log(this.astTree);
+        return this.evaluateTree(requestingExpression, context, this.astTree);
     }
 
     /**
@@ -204,11 +197,7 @@ export class Parser {
     ): number {
         if (node === undefined) return 0;
 
-        console.log("Evaluating node on rquest by:");
-        console.log(requestingExpression);
-
         if (typeof node === "string") {
-            console.log("Node was a variable");
             const dependency = context.getVariable(node);
             if (!dependency)
                 throw new CalculatorError(`Variable "${node}" not found!`);
@@ -253,7 +242,6 @@ export class Parser {
                     false,
                     requestingExpression,
                 );
-                console.log("A");
             }
 
             // Create a new context with this additional layer
@@ -261,15 +249,7 @@ export class Parser {
             functionContext.addLayer(functionLayer);
 
             // Evaluate and return the function's value
-            console.log(
-                "Stepping into function " +
-                    node.functionName +
-                    " with following requester:",
-            );
-            console.log(requestingExpression);
-            const result = e.getValue(requestingExpression, functionContext);
-            console.log("Stepping out of function " + node.functionName);
-            return result;
+            return e.getValue(requestingExpression, functionContext);
         }
 
         node = node as AstTreeNode;
@@ -314,7 +294,6 @@ export class Parser {
                 return v1 - v2;
 
             case "DIV":
-                console.log("Evaluating DIV");
                 this.checkGiveUp(requestingExpression, 0.5 * v2Len, [
                     "Division is difficult",
                     "Forgot which one was the numerator",
@@ -382,8 +361,6 @@ export class Parser {
                             Math.floor(Math.random() * buttonContents.length)
                         ],
                         callback: () => {
-                            console.log("RETRYING");
-                            console.log(expression);
                             expression.complexityMultiplier *= 0.75;
                             expression.update();
                         },

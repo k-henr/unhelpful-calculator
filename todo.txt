@@ -1,14 +1,17 @@
 - Automatically scroll to bottom when adding an expression to keep mouse on button
 - Make the introduction collapsible upwards
-- Add even more laxy error texts and responses
+- Add even more lazy error texts and responses.
     * At least 6 per operator type
     * At least 10 possible answers
 - Mobile support
 - Make a favicon
 - Remove console logs
+- Better display of numbers
+    * Take significant digits into account
+    * Add a rudimentary "infinity" - if a number is large enough, display as "lots"
+        or something like that
 - Put up on GHP
 - Reevaluate all errored expressions when setting expression content?
-- Smarter rounding for display, taking significant digits into account
 - Reorder expressions?
 - Update usedBy expressions when an expression is removed
 - Add lazy errors to built-ins? It feels weird that it's completely fine with doing
