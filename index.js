@@ -655,7 +655,8 @@
           TAU: new Expression(this, "6.283185307179586", false, true),
           PI: new Expression(this, "3.141592653589793", false, true),
           PAU: new Expression(this, "4.71238898038469", false, true),
-          E: new Expression(this, "2.718281828459045", false, true)
+          E: new Expression(this, "2.718281828459045", false, true),
+          PHI: new Expression(this, "1.618033988749895", false, true)
         }
       });
     }
