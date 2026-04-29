@@ -4,19 +4,19 @@ import {
     CalculatorError,
     LazyError,
 } from "./calculator";
-import { Expression } from "./expression";
+import { Expression, getRoundedString } from "./expression";
 
 export class Parser {
-    inputString: string;
+    private readonly inputString: string;
 
-    tokens: Token[] | null = null;
-    peek(): Token {
+    private tokens: Token[] | null = null;
+    private peek(): Token {
         return this.tokens![this.tokens!.length - 1];
     }
-    pop(): Token {
+    private pop(): Token {
         return this.tokens!.pop()!;
     }
-    expect(type: TokenType): Token {
+    private expect(type: TokenType): Token {
         const token = this.pop()!;
         if (token.type !== type)
             throw new CalculatorError(
@@ -25,13 +25,13 @@ export class Parser {
         return token;
     }
 
-    astTree: DirtyAstTreeNode = 0;
+    private astTree: DirtyAstTreeNode = 0;
 
     constructor(inputString: string) {
         this.inputString = inputString;
     }
 
-    evaluate(
+    public evaluate(
         requestingExpression: Expression,
         context: CalculatorContext,
     ): number {
@@ -45,7 +45,7 @@ export class Parser {
     /**
      * Tokenize this parser's expression.
      */
-    tokenize() {
+    private tokenize() {
         const matchedTokens = this.inputString.matchAll(tokenizer);
 
         const tokens: (Token | VariableToken | NumberToken | FunctionToken)[] =
@@ -92,7 +92,7 @@ export class Parser {
     }
 
     // Convert to AST tree
-    buildTree() {
+    private buildTree() {
         if (!this.tokens)
             throw new CalculatorError(
                 "Expression tried to parse before being tokenized!",
@@ -106,7 +106,7 @@ export class Parser {
         }
     }
 
-    getExpression(): DirtyAstTreeNode {
+    private getExpression(): DirtyAstTreeNode {
         let value1: DirtyAstTreeNode = this.getTerm();
 
         const tokenChecks: TokenType[] = ["ADD", "SUB"];
@@ -129,7 +129,7 @@ export class Parser {
         return value1;
     }
 
-    getTerm(): DirtyAstTreeNode {
+    private getTerm(): DirtyAstTreeNode {
         let value1: DirtyAstTreeNode = this.getFactor();
 
         const tokenChecks: TokenType[] = ["MUL", "DIV"];
@@ -146,7 +146,7 @@ export class Parser {
     }
 
     // Exponentiation (right-associative)
-    getFactor(): DirtyAstTreeNode {
+    private getFactor(): DirtyAstTreeNode {
         let value1: DirtyAstTreeNode = this.getUnary();
 
         const tokenChecks: TokenType[] = ["EXP"];
@@ -163,14 +163,14 @@ export class Parser {
     }
 
     // Unary minus
-    getUnary(): DirtyAstTreeNode {
+    private getUnary(): DirtyAstTreeNode {
         if (this.peek().type === "SUB") {
             this.pop();
             return { operator: "SUB", value1: 0, value2: this.getPrimary() };
         } else return this.getPrimary();
     }
 
-    getPrimary(): DirtyAstTreeNode {
+    private getPrimary(): DirtyAstTreeNode {
         const t = this.pop();
         if (t.type === "NUM") {
             return (t as NumberToken).value;
@@ -190,7 +190,7 @@ export class Parser {
         throw new CalculatorError(`Unexpected token ${t.type}`);
     }
 
-    evaluateTree(
+    private evaluateTree(
         requestingExpression: Expression,
         context: CalculatorContext,
         node: DirtyAstTreeNode | undefined,
@@ -202,8 +202,8 @@ export class Parser {
             if (!dependency)
                 throw new CalculatorError(`Variable "${node}" not found!`);
 
-            dependency.usedBy.add(requestingExpression);
-            return dependency.value;
+            dependency.addDependency(requestingExpression);
+            return dependency.getValue(requestingExpression, context);
         }
         if (typeof node === "number") {
             return Number(node);
@@ -219,13 +219,14 @@ export class Parser {
                 throw new CalculatorError(
                     `Function "${node.functionName}" not found!`,
                 );
-            if (node.functionArguments.length !== e.arguments.length)
+            const args = e.getArgumentNames();
+            if (node.functionArguments.length !== args.length)
                 throw new CalculatorError(
-                    `Argument count of ${node.functionName} is ${node.functionArguments.length}; expected ${e.arguments.length}`,
+                    `Argument count of ${node.functionName} is ${node.functionArguments.length}; expected ${args.length}`,
                 );
 
             // Mark this expression as using the function's expression
-            e.usedBy.add(requestingExpression);
+            e.addDependency(requestingExpression);
 
             // Add a new context layer for this function call (allows wackscoping atm)
             const functionLayer: CalculatorContextLayer = {
@@ -233,10 +234,10 @@ export class Parser {
                 functions: {},
             };
 
-            for (const i in e.arguments) {
+            for (const i in args) {
                 // Parse argument expression
-                functionLayer.variables[e.arguments[i]] = new Expression(
-                    requestingExpression.calculator,
+                functionLayer.variables[args[i]] = new Expression(
+                    requestingExpression.getCalculator(),
                     node.functionArguments[i],
                     false,
                     false,
@@ -302,7 +303,7 @@ export class Parser {
                 this.checkGiveUp(requestingExpression, 0.5 * v2Len, [
                     "Division is difficult",
                     "Forgot which one was the numerator",
-                    `Dividing by ${Expression.getRoundedString(v2)} takes time`,
+                    `Dividing by ${getRoundedString(v2)} takes time`,
                     "Too tired to try long division",
                     "Calculator finds fractions cofusing",
                 ]);
@@ -317,7 +318,7 @@ export class Parser {
                         "That's a lot of numbers to multiply",
                         "Calculator forgot the times table",
                         "Calculator isn't sure how lattice multiplication works; scared of doing it wrong",
-                        `Calculator never multiplied by ${Expression.getRoundedString(v2)} before`,
+                        `Calculator never multiplied by ${getRoundedString(v2)} before`,
                     ],
                 );
                 return v1 * v2;
@@ -339,7 +340,11 @@ export class Parser {
         throw new Error("Unknown operator " + node.operator); // Something weird happened!
     }
 
-    checkGiveUp(expression: Expression, chance: number, errorTexts: string[]) {
+    private checkGiveUp(
+        expression: Expression,
+        chance: number,
+        errorTexts: string[],
+    ) {
         if (Math.random() < chance * expression.complexityMultiplier) {
             LazyError.throwNew(errorTexts, () => {
                 expression.complexityMultiplier *= 0.75;

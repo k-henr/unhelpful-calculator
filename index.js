@@ -157,8 +157,8 @@
         const dependency = context.getVariable(node);
         if (!dependency)
           throw new CalculatorError(`Variable "${node}" not found!`);
-        dependency.usedBy.add(requestingExpression);
-        return dependency.value;
+        dependency.addDependency(requestingExpression);
+        return dependency.getValue(requestingExpression, context);
       }
       if (typeof node === "number") {
         return Number(node);
@@ -170,18 +170,19 @@
           throw new CalculatorError(
             `Function "${node.functionName}" not found!`
           );
-        if (node.functionArguments.length !== e.arguments.length)
+        const args = e.getArgumentNames();
+        if (node.functionArguments.length !== args.length)
           throw new CalculatorError(
-            `Argument count of ${node.functionName} is ${node.functionArguments.length}; expected ${e.arguments.length}`
+            `Argument count of ${node.functionName} is ${node.functionArguments.length}; expected ${args.length}`
           );
-        e.usedBy.add(requestingExpression);
+        e.addDependency(requestingExpression);
         const functionLayer = {
           variables: {},
           functions: {}
         };
-        for (const i in e.arguments) {
-          functionLayer.variables[e.arguments[i]] = new Expression(
-            requestingExpression.calculator,
+        for (const i in args) {
+          functionLayer.variables[args[i]] = new Expression(
+            requestingExpression.getCalculator(),
             node.functionArguments[i],
             false,
             false,
@@ -236,7 +237,7 @@
           this.checkGiveUp(requestingExpression, 0.5 * v2Len, [
             "Division is difficult",
             "Forgot which one was the numerator",
-            `Dividing by ${Expression.getRoundedString(v2)} takes time`,
+            `Dividing by ${getRoundedString(v2)} takes time`,
             "Too tired to try long division",
             "Calculator finds fractions cofusing"
           ]);
@@ -250,7 +251,7 @@
               "That's a lot of numbers to multiply",
               "Calculator forgot the times table",
               "Calculator isn't sure how lattice multiplication works; scared of doing it wrong",
-              `Calculator never multiplied by ${Expression.getRoundedString(v2)} before`
+              `Calculator never multiplied by ${getRoundedString(v2)} before`
             ]
           );
           return v1 * v2;
@@ -314,15 +315,12 @@
     expressionString;
     // Stores the full string of this expression, including declarations
     value;
-    // Gradually lowers when retrying
+    // Gradually lowers when retrying (make this happen in the expression itself to avoid leakage)
     complexityMultiplier = 1;
     coffeeMode;
     usedBy = /* @__PURE__ */ new Set();
-    template = document.querySelector(
+    static template = document.querySelector(
       "#expression-template"
-    );
-    errorButtonTemplate = document.querySelector(
-      "#error-button-template"
     );
     constructor(calculator2, expressionString, addVisual = true, coffeeMode = false, requestingExpression = this) {
       this.calculator = calculator2;
@@ -331,7 +329,7 @@
       this.value = 0;
       if (coffeeMode) this.complexityMultiplier = 0;
       if (addVisual) {
-        this.element = this.template.content.cloneNode(true).querySelector(".expression");
+        this.element = _Expression.template.content.cloneNode(true).querySelector(".expression");
         this.resultElement = this.element.querySelector(".expression-result");
         if (this.resultElement === null)
           throw new CalculatorError(
@@ -352,93 +350,78 @@
         };
         this.element.querySelector(
           ".remove-expression"
-        ).onclick = () => {
-          calculator2.removeExpression(this);
-        };
-        calculator2.expressionListElement.appendChild(this.element);
+        ).onclick = this.remove;
+        calculator2.addExpressionElement(this.element);
       }
       this.update(requestingExpression);
     }
-    showError = (e) => {
+    getCalculator() {
+      return this.calculator;
+    }
+    getArgumentNames() {
+      return this.arguments;
+    }
+    getComplexityMultiplier() {
+      return this.complexityMultiplier;
+    }
+    addDependency(e) {
+      this.usedBy.add(e);
+    }
+    getValue(requestingExpression, context) {
+      if (this.definedVariable) return this.value;
+      return new Parser(this.expressionContent).evaluate(
+        requestingExpression,
+        context
+      );
+    }
+    showError(e) {
       if (this.errorWrapper) {
         this.errorWrapper.classList.remove("hidden");
         this.errorWrapper.onclick = () => this.showErrorPopup(e);
       }
       if (!(e instanceof LazyError)) {
-        if (this.calculator.erroredExpressions.indexOf(this) == -1) {
-          this.calculator.erroredExpressions.push(this);
-        }
+        this.calculator.registerErroredExpression(this);
       }
-    };
-    showErrorPopup = (e) => {
+    }
+    showErrorPopup(e) {
       if (this.errorWrapper) {
-        const popup = this.calculator.errorPopupElement;
-        popup.innerHTML = "";
-        popup.classList.remove("hidden");
-        const errorWrapperRect = this.errorWrapper.getBoundingClientRect();
-        popup.style.top = errorWrapperRect.bottom + "px";
-        popup.style.left = errorWrapperRect.left + errorWrapperRect.width * 0.5 + "px";
-        if (e instanceof CalculatorError) {
-          popup.innerText = "ERROR: " + e.message;
-          if (e instanceof LazyError) {
-            for (const option of e.options) {
-              const button = this.errorButtonTemplate.content.cloneNode(
-                true
-              );
-              const buttonElement = button.firstElementChild;
-              buttonElement.setAttribute("value", option.name);
-              buttonElement.onclick = option.callback;
-              this.calculator.errorPopupElement.appendChild(button);
-            }
-          }
-        } else if (e instanceof Error) {
-          popup.innerText = "INTERNAL ERROR: \n" + e.message;
-        }
+        this.calculator.showErrorPopup(e, this.errorWrapper);
       }
-    };
-    hideError = () => {
-      const i = this.calculator.erroredExpressions.indexOf(this);
-      if (i > -1) {
-        this.calculator.erroredExpressions.splice(i, 1);
-      }
+    }
+    hideError() {
+      this.calculator.unregisterErroredExpression(this);
       this.errorWrapper?.classList.add("hidden");
-      this.calculator.errorPopupElement.classList.add("hidden");
-    };
-    showResult = (resultText) => {
+      this.calculator.hideErrorPopup();
+    }
+    showResult(resultText) {
       if (this.resultElement) {
         this.resultElement.innerText = resultText;
         this.resultElement.classList.remove("hidden");
       }
-    };
-    hideResult = () => {
+    }
+    hideResult() {
       this.resultElement?.classList.add("hidden");
-    };
-    static getRoundedString = (x) => {
-      if (x > 1e11) return "A lot";
-      let rounded = x.toPrecision(12);
-      rounded = rounded.replace(/\.0*$|(\.\d*?)0+$/, "$1");
-      return rounded;
-    };
-    setContent = (newContent, requestingExpression = this) => {
+    }
+    setContent(newContent, requestingExpression = this) {
       this.expressionString = newContent;
       this.update(requestingExpression);
       this.updateDirtyExpressions();
-    };
-    remove = () => {
+    }
+    remove() {
       const calc = this.calculator;
-      if (this.element) calc.expressionListElement.removeChild(this.element);
+      if (this.element) calc.removeExpressionElement(this.element);
       if (this.definedFunction) {
-        delete calc.globalContext.layers[0].functions[this.definedFunction];
+        calc.globalContext.deleteGlobalFunction(this.definedFunction);
       } else if (this.definedVariable) {
-        delete calc.globalContext.layers[0].variables[this.definedVariable];
+        calc.globalContext.deleteGlobalVariable(this.definedVariable);
       }
       this.updateDirtyExpressions();
-    };
-    updateDirtyExpressions = () => {
+    }
+    updateDirtyExpressions() {
       for (const user of this.usedBy) user.update();
       while (true) {
         let restartLoop = false;
-        for (const expr of this.calculator.erroredExpressions) {
+        for (const expr of this.calculator.getErroredExpressions()) {
           if (expr.update()) {
             restartLoop = true;
             break;
@@ -446,30 +429,49 @@
         }
         if (!restartLoop) break;
       }
-    };
-    update = (requestingExpression = this) => {
+    }
+    update(requestingExpression = this) {
       this.hideError();
       this.hideResult();
       if (this.definedVariable) {
-        delete this.calculator.globalContext.layers[0].variables[this.definedVariable];
+        this.calculator.globalContext.deleteGlobalVariable(
+          this.definedVariable
+        );
         this.definedVariable = null;
       } else if (this.definedFunction) {
-        delete this.calculator.globalContext.layers[0].functions[this.definedFunction];
+        this.calculator.globalContext.deleteGlobalFunction(
+          this.definedFunction
+        );
         this.definedFunction = null;
       }
       try {
-        const typeMatcher = /^\s*(?<VRNAME>[a-z]\w*)\s*=\s*(?<VRDEF>.*)$|^\s*(?<FNNAME>[a-z]\w*)\s*\(\s*(?<FNARGS>(?:[a-z]\w*(?:\s*,\s*[a-z]\w*\s*)*)?)\s*\)\s*=\s*(?<FNDEF>.*)/im;
+        const typeMatcher = /^\s*(?<VRNAME>\w*)\s*=\s*(?<VRDEF>.*)$|^\s*(?<FNNAME>\w*)\s*\(\s*(?<FNARGS>(?:\w*(?:\s*,\s*\w*\s*)*)?)\s*\)\s*=\s*(?<FNDEF>.*)/im;
+        const nameMatcher = /^[a-z]/gim;
         const typeMatch = this.expressionString.match(typeMatcher);
         if (typeMatch) {
           if (!typeMatch.groups)
             throw new Error("Pre-evaluation regex match failed!");
           const { groups } = typeMatch;
-          if (groups.FNNAME) {
-            this.updateFunction(
-              groups.FNNAME,
-              groups.FNARGS,
-              groups.FNDEF
+          const [fieldName, nameOfField] = groups.FNNAME ? [groups.FNNAME, "function"] : [groups.VRNAME, "variable"];
+          if (!fieldName.match(nameMatcher))
+            throw new CalculatorError(
+              `"${fieldName}" is not a valid ${nameOfField} name!`
             );
+          if (groups.FNNAME) {
+            const fnArgs = groups.FNARGS.split(",").map((e) => {
+              e = e.trim();
+              if (!e.match(nameMatcher))
+                throw new CalculatorError(
+                  `"${e}" is not a valid argument name!`
+                );
+              return e;
+            });
+            if (groups.FNARGS)
+              this.updateFunction(
+                groups.FNNAME,
+                fnArgs,
+                groups.FNDEF
+              );
           } else {
             this.updateVariable(
               requestingExpression,
@@ -488,17 +490,11 @@
         this.showError(e);
         return false;
       }
-    };
+    }
     updateFunction(fnName, fnArgs, fnDef) {
-      const fns = this.calculator.globalContext.layers[0].functions;
-      if (fns[fnName]) {
-        throw new CalculatorError(
-          `Function "${fnName}" is already defined!`
-        );
-      }
-      fns[fnName] = this;
+      this.calculator.globalContext.defineGlobalFunction(fnName, this);
       this.definedFunction = fnName;
-      this.arguments = fnArgs.split(",").map((e) => e.trim());
+      this.arguments = fnArgs;
       this.expressionContent = fnDef;
     }
     updateVariable(requestingExpression, vrName, vrDef) {
@@ -507,14 +503,10 @@
         requestingExpression,
         this.calculator.globalContext
       );
-      const vars = this.calculator.globalContext.layers[0].variables;
-      if (vars[vrName]) {
-        throw new CalculatorError(`Variable ${vrName} is already defined!`);
-      }
-      vars[vrName] = this;
+      this.calculator.globalContext.defineGlobalVariable(vrName, this);
       this.definedVariable = vrName;
       this.showResult(
-        `${this.definedVariable} = ${_Expression.getRoundedString(this.value)}`
+        `${this.definedVariable} = ${getRoundedString(this.value)}`
       );
     }
     updateExpression(requestingExpression) {
@@ -523,25 +515,19 @@
         requestingExpression,
         this.calculator.globalContext
       );
-      this.showResult(`= ${_Expression.getRoundedString(this.value)}`);
-    }
-    getValue(requestingExpression, context) {
-      return new Parser(this.expressionContent).evaluate(
-        requestingExpression,
-        context
-      );
+      this.showResult(`= ${getRoundedString(this.value)}`);
     }
   };
   var JSFunctionExpression = class _JSFunctionExpression extends Expression {
     runnable;
     failChance;
-    lazyErrorTexts;
+    additionalErrorTexts;
     constructor(calculator2, fnArguments, runnable, addVisual = false, coffeeMode = true, failChance = 0, lazyErrorTexts = []) {
       super(calculator2, "", addVisual, coffeeMode);
       this.arguments = fnArguments;
       this.runnable = runnable;
       this.failChance = failChance;
-      this.lazyErrorTexts = lazyErrorTexts;
+      this.additionalErrorTexts = lazyErrorTexts;
     }
     static simpleMaths(calc, fn, failChance = 0) {
       return new _JSFunctionExpression(
@@ -553,14 +539,25 @@
         failChance
       );
     }
-    getValue = (requestingExpression, context) => {
+    // Yucky solution until I split expressions, functions and variables into
+    // subclasses
+    update() {
+      return true;
+    }
+    getValue(requestingExpression, context) {
       if (Math.random() < this.failChance)
-        LazyError.throwNew([], () => {
+        LazyError.throwNew(this.additionalErrorTexts, () => {
           requestingExpression.update();
         });
       return this.runnable(requestingExpression, context);
-    };
+    }
   };
+  function getRoundedString(x) {
+    if (x > 1e11) return "Too much to bother";
+    let rounded = x.toPrecision(12);
+    rounded = rounded.replace(/\.0*$|(\.\d*?)0+$/, "$1");
+    return rounded;
+  }
 
   // calculator.ts
   var CalculatorError = class extends Error {
@@ -596,7 +593,19 @@
       "I believe in you!",
       "Don't despair!"
     ];
-    static throwNew = (additionalErrorTexts, buttonCallback) => {
+    // Add response buttons
+    addOptionsToElement(errorButtonTemplate, el) {
+      for (const option of this.options) {
+        const button = errorButtonTemplate.content.cloneNode(
+          true
+        );
+        const buttonElement = button.firstElementChild;
+        buttonElement.setAttribute("value", option.name);
+        buttonElement.onclick = option.callback;
+        el.appendChild(button);
+      }
+    }
+    static throwNew(additionalErrorTexts, buttonCallback) {
       const combinedErrorTexts = this.universalMessages.concat(additionalErrorTexts);
       throw new _LazyError(
         combinedErrorTexts[Math.floor(Math.random() * combinedErrorTexts.length)],
@@ -609,42 +618,59 @@
           }
         ]
       );
-    };
+    }
   };
   var CalculatorContext3 = class _CalculatorContext {
     layers = [];
-    addBlankLayer = () => {
-      this.addLayer({
-        variables: {},
-        functions: {}
-      });
-    };
     addLayer = (layer) => {
       this.layers.unshift(layer);
     };
-    getVariable = (name) => {
+    defineGlobalFunction(name, expression) {
+      const fns = this.layers[0].functions;
+      if (fns[name]) {
+        throw new CalculatorError(`Function "${name}" is already defined!`);
+      }
+      fns[name] = expression;
+    }
+    deleteGlobalFunction(name) {
+      delete this.layers[0].functions[name];
+    }
+    defineGlobalVariable(name, expression) {
+      const vars = this.layers[0].variables;
+      if (vars[name]) {
+        throw new CalculatorError(`Variable ${name} is already defined!`);
+      }
+      vars[name] = expression;
+    }
+    deleteGlobalVariable(name) {
+      delete this.layers[0].variables[name];
+    }
+    getVariable(name) {
       for (const l of this.layers) {
         if (l.variables[name]) return l.variables[name];
       }
       throw new CalculatorError(`Variable "${name}" not found!`);
-    };
-    getFunction = (name) => {
+    }
+    getFunction(name) {
       for (const l of this.layers) {
         if (l.functions[name]) return l.functions[name];
       }
       throw new CalculatorError(`Function "${name}" not found!`);
-    };
-    copy = () => {
+    }
+    copy() {
       const newCtx = new _CalculatorContext();
       newCtx.layers = [...this.layers];
       return newCtx;
-    };
+    }
   };
-  var Calculator2 = class {
+  var Calculator2 = class _Calculator {
     expressionListElement;
     errorPopupElement;
     erroredExpressions = [];
     globalContext = new CalculatorContext3();
+    static errorButtonTemplate = document.querySelector(
+      "#error-button-template"
+    );
     constructor(expressionList2, errorPopupElement2) {
       this.expressionListElement = expressionList2;
       this.errorPopupElement = errorPopupElement2;
@@ -685,26 +711,49 @@
         }
       });
     }
+    addExpressionElement(el) {
+      this.expressionListElement.appendChild(el);
+    }
+    removeExpressionElement(el) {
+      this.expressionListElement.removeChild(el);
+    }
+    registerErroredExpression(e) {
+      if (this.erroredExpressions.indexOf(e) == -1) {
+        this.erroredExpressions.push(e);
+      }
+    }
+    unregisterErroredExpression(e) {
+      const i = this.erroredExpressions.indexOf(e);
+      if (i > -1) {
+        this.erroredExpressions.splice(i, 1);
+      }
+    }
+    getErroredExpressions() {
+      return this.erroredExpressions;
+    }
+    showErrorPopup(e, sourceElement) {
+      const errorWrapperRect = sourceElement.getBoundingClientRect();
+      const isCalcError = e instanceof CalculatorError;
+      this.errorPopupElement.innerHTML = "";
+      this.errorPopupElement.style.top = errorWrapperRect.bottom + "px";
+      this.errorPopupElement.style.left = errorWrapperRect.left + errorWrapperRect.width * 0.5 + "px";
+      this.errorPopupElement.innerText = (isCalcError ? "ERROR: " : "INTERNAL ERROR: ") + e.message;
+      if (e instanceof LazyError) {
+        e.addOptionsToElement(
+          _Calculator.errorButtonTemplate,
+          this.errorPopupElement
+        );
+      }
+      this.errorPopupElement.classList.remove("hidden");
+    }
+    hideErrorPopup() {
+      this.errorPopupElement.classList.add("hidden");
+    }
     /**
      * Add a new, empty expression to this calculator.
      */
     addExpression() {
       new Expression(this, "");
-    }
-    /**
-     * Remove the given expression.
-     * @param expression The expression to remove
-     */
-    removeExpression(expression) {
-      expression.remove();
-    }
-    /**
-     * Set the content of the given expression to something new.
-     * @param expression The expression to change
-     * @param newValue The new content of this expression
-     */
-    setExpressionContent(expression, newValue) {
-      expression.setContent(newValue);
     }
   };
 

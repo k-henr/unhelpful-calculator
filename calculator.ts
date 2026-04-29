@@ -12,13 +12,14 @@ export type ErrorCallback = {
 };
 
 export class LazyError extends CalculatorError {
-    options: ErrorCallback[] = [];
+    private options: ErrorCallback[] = [];
+
     constructor(message: string, options: ErrorCallback[]) {
         super(message);
         this.options = options;
     }
 
-    static universalMessages: string[] = [
+    private static universalMessages: string[] = [
         "Do I really need to do this?",
         "Calculator zoned out",
         "Calculator is tired today",
@@ -29,7 +30,7 @@ export class LazyError extends CalculatorError {
         "Calculator is confused",
     ];
 
-    static universalButtonContent: string[] = [
+    private static universalButtonContent: string[] = [
         "Try again!",
         "You can do this!",
         "You can do it!",
@@ -42,10 +43,29 @@ export class LazyError extends CalculatorError {
         "Don't despair!",
     ];
 
-    static throwNew = (
+    // Add response buttons
+    public addOptionsToElement(
+        errorButtonTemplate: HTMLTemplateElement,
+        el: HTMLElement,
+    ) {
+        for (const option of this.options) {
+            // Create a new button
+            const button = errorButtonTemplate.content.cloneNode(
+                true,
+            ) as HTMLElement;
+
+            const buttonElement = button.firstElementChild as HTMLElement;
+            buttonElement.setAttribute("value", option.name);
+            buttonElement.onclick = option.callback;
+
+            el.appendChild(button);
+        }
+    }
+
+    public static throwNew(
         additionalErrorTexts: string[],
         buttonCallback: () => void,
-    ) => {
+    ) {
         const combinedErrorTexts =
             this.universalMessages.concat(additionalErrorTexts);
 
@@ -65,42 +85,62 @@ export class LazyError extends CalculatorError {
                 },
             ],
         );
-    };
+    }
 }
 
 export class CalculatorContext {
-    layers: CalculatorContextLayer[] = [];
+    private layers: CalculatorContextLayer[] = [];
 
-    addBlankLayer = () => {
-        this.addLayer({
-            variables: {},
-            functions: {},
-        });
-    };
-
-    addLayer = (layer: CalculatorContextLayer) => {
+    public addLayer = (layer: CalculatorContextLayer) => {
         this.layers.unshift(layer);
     };
 
-    getVariable = (name: string) => {
+    public defineGlobalFunction(name: string, expression: Expression) {
+        const fns = this.layers[0].functions;
+        if (fns[name]) {
+            throw new CalculatorError(`Function "${name}" is already defined!`);
+        }
+        fns[name] = expression;
+    }
+
+    public deleteGlobalFunction(name: string) {
+        delete this.layers[0].functions[name];
+    }
+
+    public defineGlobalVariable(name: string, expression: Expression) {
+        // Make sure that the variable doesn't already exist
+        const vars = this.layers[0].variables;
+        if (vars[name]) {
+            throw new CalculatorError(`Variable ${name} is already defined!`);
+        }
+
+        // Store this expression in the global calculator context
+        vars[name] = expression;
+    }
+
+    public deleteGlobalVariable(name: string) {
+        delete this.layers[0].variables[name];
+    }
+
+    public getVariable(name: string) {
         for (const l of this.layers) {
             if (l.variables[name]) return l.variables[name];
         }
         throw new CalculatorError(`Variable "${name}" not found!`);
-    };
+    }
 
-    getFunction = (name: string) => {
+    public getFunction(name: string) {
         for (const l of this.layers) {
             if (l.functions[name]) return l.functions[name];
         }
         throw new CalculatorError(`Function "${name}" not found!`);
-    };
+    }
 
-    copy = () => {
+    public copy() {
         const newCtx = new CalculatorContext();
         newCtx.layers = [...this.layers];
         return newCtx;
-    };
+    }
 }
 
 export type CalculatorContextLayer = {
@@ -109,12 +149,16 @@ export type CalculatorContextLayer = {
 };
 
 export class Calculator {
-    expressionListElement: HTMLElement;
-    errorPopupElement: HTMLElement;
+    private readonly expressionListElement: HTMLElement;
+    private readonly errorPopupElement: HTMLElement;
 
-    erroredExpressions: Expression[] = [];
+    private readonly erroredExpressions: Expression[] = [];
 
-    globalContext: CalculatorContext = new CalculatorContext();
+    public readonly globalContext: CalculatorContext = new CalculatorContext();
+
+    private static readonly errorButtonTemplate = document.querySelector(
+        "#error-button-template",
+    ) as HTMLTemplateElement;
 
     constructor(expressionList: HTMLElement, errorPopupElement: HTMLElement) {
         this.expressionListElement = expressionList;
@@ -161,27 +205,68 @@ export class Calculator {
         });
     }
 
+    public addExpressionElement(el: HTMLElement) {
+        this.expressionListElement.appendChild(el);
+    }
+
+    public removeExpressionElement(el: HTMLElement) {
+        this.expressionListElement.removeChild(el);
+    }
+
+    public registerErroredExpression(e: Expression) {
+        if (this.erroredExpressions.indexOf(e) == -1) {
+            this.erroredExpressions.push(e);
+        }
+    }
+
+    public unregisterErroredExpression(e: Expression) {
+        const i = this.erroredExpressions.indexOf(e);
+        if (i > -1) {
+            this.erroredExpressions.splice(i, 1);
+        }
+    }
+
+    public getErroredExpressions() {
+        return this.erroredExpressions; // TODO: Copy list to avoid leakage?
+        // Alternatively, this is just used when updating all errored expressions so
+        // I could just move the code to here and get rid of this?? Might make more
+        // sense as well
+    }
+
+    public showErrorPopup(e: Error, sourceElement: HTMLElement) {
+        // Show the error on this error wrapper
+        const errorWrapperRect = sourceElement.getBoundingClientRect();
+        const isCalcError = e instanceof CalculatorError;
+
+        this.errorPopupElement.innerHTML = "";
+
+        this.errorPopupElement.style.top = errorWrapperRect.bottom + "px";
+        this.errorPopupElement.style.left =
+            errorWrapperRect.left + errorWrapperRect.width * 0.5 + "px";
+
+        this.errorPopupElement.innerText =
+            (isCalcError ? "ERROR: " : "INTERNAL ERROR: ") + e.message;
+
+        // Add button options if it's a lazy error
+        if (e instanceof LazyError) {
+            e.addOptionsToElement(
+                Calculator.errorButtonTemplate,
+                this.errorPopupElement,
+            );
+        }
+
+        // Show the popup
+        this.errorPopupElement.classList.remove("hidden");
+    }
+
+    public hideErrorPopup() {
+        this.errorPopupElement.classList.add("hidden");
+    }
+
     /**
      * Add a new, empty expression to this calculator.
      */
-    addExpression() {
+    public addExpression() {
         new Expression(this, "");
-    }
-
-    /**
-     * Remove the given expression.
-     * @param expression The expression to remove
-     */
-    removeExpression(expression: Expression) {
-        expression.remove();
-    }
-
-    /**
-     * Set the content of the given expression to something new.
-     * @param expression The expression to change
-     * @param newValue The new content of this expression
-     */
-    setExpressionContent(expression: Expression, newValue: string) {
-        expression.setContent(newValue);
     }
 }
