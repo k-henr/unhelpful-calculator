@@ -421,16 +421,42 @@
     };
     setContent = (newContent, requestingExpression = this) => {
       this.expressionString = newContent;
-      if (this.update(requestingExpression)) {
-        for (const expr of [...this.calculator.erroredExpressions]) {
-          console.log(expr.expressionString);
-          expr.update();
+      this.update(requestingExpression);
+      this.updateDirtyExpressions();
+    };
+    remove = () => {
+      const calc = this.calculator;
+      if (this.element) calc.expressionListElement.removeChild(this.element);
+      if (this.definedFunction) {
+        delete calc.globalContext.layers[0].functions[this.definedFunction];
+      } else if (this.definedVariable) {
+        delete calc.globalContext.layers[0].variables[this.definedVariable];
+      }
+      this.updateDirtyExpressions();
+    };
+    updateDirtyExpressions = () => {
+      for (const user of this.usedBy) user.update();
+      while (true) {
+        let restartLoop = false;
+        for (const expr of this.calculator.erroredExpressions) {
+          if (expr.update()) {
+            restartLoop = true;
+            break;
+          }
         }
+        if (!restartLoop) break;
       }
     };
     update = (requestingExpression = this) => {
       this.hideError();
       this.hideResult();
+      if (this.definedVariable) {
+        delete this.calculator.globalContext.layers[0].variables[this.definedVariable];
+        this.definedVariable = null;
+      } else if (this.definedFunction) {
+        delete this.calculator.globalContext.layers[0].functions[this.definedFunction];
+        this.definedFunction = null;
+      }
       try {
         const typeMatcher = /^\s*(?<VRNAME>[a-z]\w*)\s*=\s*(?<VRDEF>.*)$|^\s*(?<FNNAME>[a-z]\w*)\s*\(\s*(?<FNARGS>(?:[a-z]\w*(?:\s*,\s*[a-z]\w*\s*)*)?)\s*\)\s*=\s*(?<FNDEF>.*)/im;
         const typeMatch = this.expressionString.match(typeMatcher);
@@ -438,58 +464,21 @@
           if (!typeMatch.groups)
             throw new Error("Pre-evaluation regex match failed!");
           const { groups } = typeMatch;
-          if (this.definedVariable) {
-            delete this.calculator.globalContext.layers[0].variables[this.definedVariable];
-          } else if (this.definedFunction) {
-            delete this.calculator.globalContext.layers[0].functions[this.definedFunction];
-          }
           if (groups.FNNAME) {
-            const fns = this.calculator.globalContext.layers[0].functions;
-            if (fns[groups.FNNAME]) {
-              throw new CalculatorError(
-                `Function "${groups.FNNAME}" is already defined!`
-              );
-            }
-            fns[groups.FNNAME] = this;
-            this.definedFunction = groups.FNNAME;
-            this.arguments = groups.FNARGS.split(",").map(
-              (e) => e.trim()
+            this.updateFunction(
+              groups.FNNAME,
+              groups.FNARGS,
+              groups.FNDEF
             );
-            this.expressionContent = groups.FNDEF;
           } else {
-            const vars = this.calculator.globalContext.layers[0].variables;
-            if (vars[groups.VRNAME]) {
-              throw new CalculatorError(
-                `Variable ${groups.VRNAME} is already defined!`
-              );
-            }
-            vars[groups.VRNAME] = this;
-            this.definedVariable = groups.VRNAME;
-            this.expressionContent = groups.VRDEF;
-            this.value = this.getValue(
+            this.updateVariable(
               requestingExpression,
-              this.calculator.globalContext
-            );
-            this.showResult(
-              `${this.definedVariable} = ${_Expression.getRoundedString(this.value)}`
+              groups.VRNAME,
+              groups.VRDEF
             );
           }
         } else {
-          const ctx = this.calculator.globalContext.layers[0];
-          if (this.definedVariable) {
-            delete ctx.variables[this.definedVariable];
-          } else if (this.definedFunction) {
-            delete ctx.functions[this.definedFunction];
-          }
-          this.expressionContent = this.expressionString;
-          this.value = this.getValue(
-            requestingExpression,
-            this.calculator.globalContext
-          );
-          this.showResult(`= ${_Expression.getRoundedString(this.value)}`);
-        }
-        for (const user of this.usedBy) {
-          user.update();
+          this.updateExpression(requestingExpression);
         }
         if (!this.coffeeMode) this.complexityMultiplier = 1;
         return true;
@@ -500,6 +489,42 @@
         return false;
       }
     };
+    updateFunction(fnName, fnArgs, fnDef) {
+      const fns = this.calculator.globalContext.layers[0].functions;
+      if (fns[fnName]) {
+        throw new CalculatorError(
+          `Function "${fnName}" is already defined!`
+        );
+      }
+      fns[fnName] = this;
+      this.definedFunction = fnName;
+      this.arguments = fnArgs.split(",").map((e) => e.trim());
+      this.expressionContent = fnDef;
+    }
+    updateVariable(requestingExpression, vrName, vrDef) {
+      this.expressionContent = vrDef;
+      this.value = this.getValue(
+        requestingExpression,
+        this.calculator.globalContext
+      );
+      const vars = this.calculator.globalContext.layers[0].variables;
+      if (vars[vrName]) {
+        throw new CalculatorError(`Variable ${vrName} is already defined!`);
+      }
+      vars[vrName] = this;
+      this.definedVariable = vrName;
+      this.showResult(
+        `${this.definedVariable} = ${_Expression.getRoundedString(this.value)}`
+      );
+    }
+    updateExpression(requestingExpression) {
+      this.expressionContent = this.expressionString;
+      this.value = this.getValue(
+        requestingExpression,
+        this.calculator.globalContext
+      );
+      this.showResult(`= ${_Expression.getRoundedString(this.value)}`);
+    }
     getValue(requestingExpression, context) {
       return new Parser(this.expressionContent).evaluate(
         requestingExpression,
@@ -671,19 +696,7 @@
      * @param expression The expression to remove
      */
     removeExpression(expression) {
-      if (expression.element)
-        this.expressionListElement.removeChild(expression.element);
-      if (expression.definedFunction) {
-        delete this.globalContext.layers[0].functions[expression.definedFunction];
-      } else if (expression.definedVariable) {
-        delete this.globalContext.layers[0].variables[expression.definedVariable];
-      }
-      for (const expr of expression.usedBy) {
-        expr.update();
-      }
-      for (const expr of this.erroredExpressions) {
-        expr.update();
-      }
+      expression.remove();
     }
     /**
      * Set the content of the given expression to something new.

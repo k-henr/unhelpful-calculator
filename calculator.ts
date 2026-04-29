@@ -173,29 +173,7 @@ export class Calculator {
      * @param expression The expression to remove
      */
     removeExpression(expression: Expression) {
-        // Remove the element visual
-        if (expression.element)
-            this.expressionListElement.removeChild(expression.element);
-
-        // Remove any field definitions from the expression
-        if (expression.definedFunction) {
-            delete this.globalContext.layers[0].functions[
-                expression.definedFunction
-            ];
-        } else if (expression.definedVariable) {
-            delete this.globalContext.layers[0].variables[
-                expression.definedVariable
-            ];
-        }
-
-        // Reevaluate any expressions that depended on this one, and any errored
-        // expressions
-        for (const expr of expression.usedBy) {
-            expr.update();
-        }
-        for (const expr of this.erroredExpressions) {
-            expr.update();
-        }
+        expression.remove();
     }
 
     /**

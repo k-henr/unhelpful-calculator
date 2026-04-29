@@ -1,3 +1,0 @@
-Additional ideas:
-- Reorder expressions?
-- Automatically scroll to bottom when adding an expression to keep mouse on button

@@ -72,17 +72,17 @@ export class Expression {
                 );
 
             // Add a listener to set the contents of the expression when it changes
-            (this.element.querySelector(
+            this.element.querySelector<HTMLInputElement>(
                 ".expression-edit-field",
-            ) as HTMLInputElement)!.onchange = (e) => {
+            )!.onchange = (e) => {
                 const target = e.target as HTMLInputElement;
                 this.setContent(target.value);
             };
 
             // Add a listener for removing the expression when the cross is clicked
-            (this.element.querySelector(
+            this.element.querySelector<HTMLElement>(
                 ".remove-expression",
-            ) as HTMLElement)!.onclick = () => {
+            )!.onclick = () => {
                 calculator.removeExpression(this);
             };
 
@@ -192,19 +192,61 @@ export class Expression {
         requestingExpression: Expression = this,
     ) => {
         this.expressionString = newContent;
-        if (this.update(requestingExpression)) {
-            // If the update succeeded, also update all errored expressions in the
-            // calculator in case this line fixed the error
-            for (const expr of [...this.calculator.erroredExpressions]) {
-                console.log(expr.expressionString);
-                expr.update();
+        this.update(requestingExpression);
+        this.updateDirtyExpressions();
+    };
+
+    remove = () => {
+        const calc = this.calculator;
+
+        // Remove the element visual
+        if (this.element) calc.expressionListElement.removeChild(this.element);
+
+        // Remove any field definitions from the expression
+        if (this.definedFunction) {
+            delete calc.globalContext.layers[0].functions[this.definedFunction];
+        } else if (this.definedVariable) {
+            delete calc.globalContext.layers[0].variables[this.definedVariable];
+        }
+
+        this.updateDirtyExpressions();
+    };
+
+    updateDirtyExpressions = () => {
+        // Update all expressions that used this one
+        for (const user of this.usedBy) user.update();
+
+        // Update all errored expressions
+        while (true) {
+            let restartLoop = false;
+            for (const expr of this.calculator.erroredExpressions) {
+                // If an update succeeds, that could mean that other expressions
+                // would also succeed. This means we have to restart
+                if (expr.update()) {
+                    restartLoop = true;
+                    break;
+                }
             }
+            if (!restartLoop) break;
         }
     };
 
     update = (requestingExpression: Expression = this): boolean => {
         this.hideError();
         this.hideResult();
+
+        // Delete any old variable or function that this expression defined
+        if (this.definedVariable) {
+            delete this.calculator.globalContext.layers[0].variables[
+                this.definedVariable
+            ];
+            this.definedVariable = null;
+        } else if (this.definedFunction) {
+            delete this.calculator.globalContext.layers[0].functions[
+                this.definedFunction
+            ];
+            this.definedFunction = null;
+        }
 
         try {
             // FUNCTION MATCHER:
@@ -226,83 +268,45 @@ export class Expression {
 
                 const { groups } = typeMatch;
 
-                // Delete any old variable or function that this expression defined
-                if (this.definedVariable) {
-                    delete this.calculator.globalContext.layers[0].variables[
-                        this.definedVariable
-                    ];
-                } else if (this.definedFunction) {
-                    delete this.calculator.globalContext.layers[0].functions[
-                        this.definedFunction
-                    ];
-                }
-
                 // Check if the field declaration is a function or a variable
                 if (groups.FNNAME) {
                     // Was a function. Don't evaluate, just store in the global calculator context
-                    const fns =
-                        this.calculator.globalContext.layers[0].functions;
-                    if (fns[groups.FNNAME]) {
-                        throw new CalculatorError(
-                            `Function "${groups.FNNAME}" is already defined!`,
-                        );
-                    }
-                    fns[groups.FNNAME] = this;
-                    this.definedFunction = groups.FNNAME;
-                    this.arguments = groups.FNARGS.split(",").map((e) =>
-                        e.trim(),
+                    this.updateFunction(
+                        groups.FNNAME,
+                        groups.FNARGS,
+                        groups.FNDEF,
                     );
-                    this.expressionContent = groups.FNDEF;
                 } else {
                     // Was a variable. Compute value, store self in global context
-                    const vars =
-                        this.calculator.globalContext.layers[0].variables;
-                    if (vars[groups.VRNAME]) {
-                        throw new CalculatorError(
-                            `Variable ${groups.VRNAME} is already defined!`,
-                        );
-                    }
-                    vars[groups.VRNAME] = this;
-                    this.definedVariable = groups.VRNAME;
-
-                    // Calculate the value of this expression
-                    this.expressionContent = groups.VRDEF;
-                    this.value = this.getValue(
+                    this.updateVariable(
                         requestingExpression,
-                        this.calculator.globalContext,
-                    );
-
-                    // Show the result
-                    this.showResult(
-                        `${this.definedVariable} = ${Expression.getRoundedString(this.value)}`,
+                        groups.VRNAME,
+                        groups.VRDEF,
                     );
                 }
             } else {
                 // Was just a normal expression
-
-                // If it previously defined a variable, remove that binding
-                const ctx = this.calculator.globalContext.layers[0];
-                if (this.definedVariable) {
-                    delete ctx.variables[this.definedVariable];
-                } else if (this.definedFunction) {
-                    delete ctx.functions[this.definedFunction];
-                }
-
-                this.expressionContent = this.expressionString;
-                this.value = this.getValue(
-                    requestingExpression,
-                    this.calculator.globalContext,
-                );
-                this.showResult(`= ${Expression.getRoundedString(this.value)}`);
-            }
-
-            // Reevaluate all expressions that used this field
-            for (const user of this.usedBy) {
-                user.update();
+                this.updateExpression(requestingExpression);
             }
 
             // Reset complexity multiplier if parse succeeded
             if (!this.coffeeMode) this.complexityMultiplier = 1;
+
+            // // Update all expressions that used this expression, since they probably
+            // // have new values now
+            // for (const expr of this.usedBy) {
+            //     expr.update();
+            // }
+
+            // // If the update succeeded, also update all errored expressions in the
+            // // calculator in case this line fixed the error
+            // // Warning: Look out for infinite loops! I think this won't cause any
+            // // problems, since every time it runs one expression will have been
+            // // removed from the erroredExpressions list
+            // for (const expr of [...this.calculator.erroredExpressions]) {
+            //     if (expr === this) continue; // just to be safe, though at this point it shouldn't be a problem
+            //     expr.update();
+            // }
 
             // Return true, since the parse succeeded
             return true;
@@ -317,6 +321,57 @@ export class Expression {
             return false;
         }
     };
+
+    updateFunction(fnName: string, fnArgs: string, fnDef: string) {
+        const fns = this.calculator.globalContext.layers[0].functions;
+        if (fns[fnName]) {
+            throw new CalculatorError(
+                `Function "${fnName}" is already defined!`,
+            );
+        }
+        // Define the function. No parsing happens here (it could though??)
+        fns[fnName] = this;
+        this.definedFunction = fnName;
+        this.arguments = fnArgs.split(",").map((e) => e.trim());
+        this.expressionContent = fnDef;
+    }
+
+    updateVariable(
+        requestingExpression: Expression,
+        vrName: string,
+        vrDef: string,
+    ) {
+        // Calculate the value of this expression (throwing error if something went wrong)
+        this.expressionContent = vrDef;
+        this.value = this.getValue(
+            requestingExpression,
+            this.calculator.globalContext,
+        );
+
+        // Make sure that the variable
+        const vars = this.calculator.globalContext.layers[0].variables;
+        if (vars[vrName]) {
+            throw new CalculatorError(`Variable ${vrName} is already defined!`);
+        }
+
+        // Store this expression in the global calculator context
+        vars[vrName] = this;
+        this.definedVariable = vrName;
+
+        // Show the result
+        this.showResult(
+            `${this.definedVariable} = ${Expression.getRoundedString(this.value)}`,
+        );
+    }
+
+    updateExpression(requestingExpression: Expression) {
+        this.expressionContent = this.expressionString;
+        this.value = this.getValue(
+            requestingExpression,
+            this.calculator.globalContext,
+        );
+        this.showResult(`= ${Expression.getRoundedString(this.value)}`);
+    }
 
     getValue(
         requestingExpression: Expression,
