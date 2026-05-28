@@ -48,8 +48,7 @@ export class Parser {
     private tokenize() {
         const matchedTokens = this.inputString.matchAll(tokenizer);
 
-        const tokens: (Token | VariableToken | NumberToken | FunctionToken)[] =
-            [];
+        const tokens: (Token | VariableToken | NumberToken | FunctionToken)[] = [];
         for (const match of matchedTokens) {
             const { groups } = match;
             if (!groups) continue; // Ignore empty matches to get rid of warning
@@ -78,9 +77,7 @@ export class Parser {
                     tokens.unshift({ type, value: Number(groups[type]) });
                     break;
                 case "INVALID":
-                    throw new CalculatorError(
-                        `Invalid token '${groups[type]}'!`,
-                    );
+                    throw new CalculatorError(`Invalid token '${groups[type]}'!`);
                 default:
                     tokens.unshift({ type });
             }
@@ -255,16 +252,8 @@ export class Parser {
 
         node = node as AstTreeNode;
 
-        const v1 = this.evaluateTree(
-            requestingExpression,
-            context,
-            node.value1,
-        );
-        const v2 = this.evaluateTree(
-            requestingExpression,
-            context,
-            node.value2,
-        );
+        const v1 = this.evaluateTree(requestingExpression, context, node.value1);
+        const v2 = this.evaluateTree(requestingExpression, context, node.value2);
 
         const v1Len = String(v1).length;
         const v2Len = String(v2).length;
@@ -273,8 +262,7 @@ export class Parser {
             case "ADD":
                 this.checkGiveUp(
                     requestingExpression,
-                    0.2 * Math.min(v1Len + 0.1 * v2Len, v2Len + 0.1 * v1Len) -
-                        2,
+                    0.2 * Math.min(v1Len + 0.1 * v2Len, v2Len + 0.1 * v1Len) - 2,
                     [
                         "Adding big numbers is boring",
                         "Couldn't you add those things instead?",
@@ -345,11 +333,18 @@ export class Parser {
         chance: number,
         errorTexts: string[],
     ) {
-        if (Math.random() < chance * expression.complexityMultiplier) {
-            LazyError.throwNew(errorTexts, () => {
-                expression.complexityMultiplier *= 0.75;
-                expression.update();
-            });
+        const r = Math.random();
+        const callback = () => {
+            expression.complexityMultiplier *= 0.75;
+            expression.update();
+        };
+        if (r < chance * expression.complexityMultiplier) {
+            if (r < 0.01) {
+                throw new LazyError("I just lost the game", [
+                    { name: "Me too", callback },
+                ]);
+            }
+            LazyError.throwNew(errorTexts, callback);
         }
     }
 }

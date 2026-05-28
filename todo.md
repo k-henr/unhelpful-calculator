@@ -1,9 +1,5 @@
 # TODO
 
-- Remove base tag commenting-out
-- Merge dev branch
-- Re-add base tag commenting-out
-
 - Split Function, Expression and Variable into three different subclasses
 - Move some classes out of calculator.ts and into new files
 - Do inline TODOs

@@ -56,9 +56,7 @@
             tokens.unshift({ type, value: Number(groups[type]) });
             break;
           case "INVALID":
-            throw new CalculatorError(
-              `Invalid token '${groups[type]}'!`
-            );
+            throw new CalculatorError(`Invalid token '${groups[type]}'!`);
           default:
             tokens.unshift({ type });
         }
@@ -194,16 +192,8 @@
         return e.getValue(requestingExpression, functionContext);
       }
       node = node;
-      const v1 = this.evaluateTree(
-        requestingExpression,
-        context,
-        node.value1
-      );
-      const v2 = this.evaluateTree(
-        requestingExpression,
-        context,
-        node.value2
-      );
+      const v1 = this.evaluateTree(requestingExpression, context, node.value1);
+      const v2 = this.evaluateTree(requestingExpression, context, node.value2);
       const v1Len = String(v1).length;
       const v2Len = String(v2).length;
       switch (node.operator) {
@@ -271,11 +261,18 @@
       throw new Error("Unknown operator " + node.operator);
     }
     checkGiveUp(expression, chance, errorTexts) {
-      if (Math.random() < chance * expression.complexityMultiplier) {
-        LazyError.throwNew(errorTexts, () => {
-          expression.complexityMultiplier *= 0.75;
-          expression.update();
-        });
+      const r = Math.random();
+      const callback = () => {
+        expression.complexityMultiplier *= 0.75;
+        expression.update();
+      };
+      if (r < chance * expression.complexityMultiplier) {
+        if (r < 0.01) {
+          throw new LazyError("I just lost the game", [
+            { name: "Me too", callback }
+          ]);
+        }
+        LazyError.throwNew(errorTexts, callback);
       }
     }
   };
