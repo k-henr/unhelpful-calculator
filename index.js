@@ -345,9 +345,7 @@
           const target = e.target;
           this.setContent(target.value);
         };
-        this.element.querySelector(
-          ".remove-expression"
-        ).onclick = this.remove;
+        this.element.querySelector(".remove-expression").onclick = this.remove;
         calculator2.addExpressionElement(this.element);
       }
       this.update(requestingExpression);
@@ -404,7 +402,7 @@
       this.update(requestingExpression);
       this.updateDirtyExpressions();
     }
-    remove() {
+    remove = () => {
       const calc = this.calculator;
       if (this.element) calc.removeExpressionElement(this.element);
       if (this.definedFunction) {
@@ -412,8 +410,9 @@
       } else if (this.definedVariable) {
         calc.globalContext.deleteGlobalVariable(this.definedVariable);
       }
+      console.log(this);
       this.updateDirtyExpressions();
-    }
+    };
     updateDirtyExpressions() {
       for (const user of this.usedBy) user.update();
       while (true) {
@@ -431,14 +430,10 @@
       this.hideError();
       this.hideResult();
       if (this.definedVariable) {
-        this.calculator.globalContext.deleteGlobalVariable(
-          this.definedVariable
-        );
+        this.calculator.globalContext.deleteGlobalVariable(this.definedVariable);
         this.definedVariable = null;
       } else if (this.definedFunction) {
-        this.calculator.globalContext.deleteGlobalFunction(
-          this.definedFunction
-        );
+        this.calculator.globalContext.deleteGlobalFunction(this.definedFunction);
         this.definedFunction = null;
       }
       try {
@@ -464,11 +459,7 @@
               return e;
             });
             if (groups.FNARGS)
-              this.updateFunction(
-                groups.FNNAME,
-                fnArgs,
-                groups.FNDEF
-              );
+              this.updateFunction(groups.FNNAME, fnArgs, groups.FNDEF);
           } else {
             this.updateVariable(
               requestingExpression,
@@ -502,9 +493,7 @@
       );
       this.calculator.globalContext.defineGlobalVariable(vrName, this);
       this.definedVariable = vrName;
-      this.showResult(
-        `${this.definedVariable} = ${getRoundedString(this.value)}`
-      );
+      this.showResult(`${this.definedVariable} = ${getRoundedString(this.value)}`);
     }
     updateExpression(requestingExpression) {
       this.expressionContent = this.expressionString;
