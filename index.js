@@ -56,9 +56,7 @@
             tokens.unshift({ type, value: Number(groups[type]) });
             break;
           case "INVALID":
-            throw new CalculatorError(
-              `Invalid token '${groups[type]}'!`
-            );
+            throw new CalculatorError(`Invalid token '${groups[type]}'!`);
           default:
             tokens.unshift({ type });
         }
@@ -194,16 +192,8 @@
         return e.getValue(requestingExpression, functionContext);
       }
       node = node;
-      const v1 = this.evaluateTree(
-        requestingExpression,
-        context,
-        node.value1
-      );
-      const v2 = this.evaluateTree(
-        requestingExpression,
-        context,
-        node.value2
-      );
+      const v1 = this.evaluateTree(requestingExpression, context, node.value1);
+      const v2 = this.evaluateTree(requestingExpression, context, node.value2);
       const v1Len = String(v1).length;
       const v2Len = String(v2).length;
       switch (node.operator) {
@@ -271,11 +261,18 @@
       throw new Error("Unknown operator " + node.operator);
     }
     checkGiveUp(expression, chance, errorTexts) {
-      if (Math.random() < chance * expression.complexityMultiplier) {
-        LazyError.throwNew(errorTexts, () => {
-          expression.complexityMultiplier *= 0.75;
-          expression.update();
-        });
+      const r = Math.random();
+      const callback = () => {
+        expression.complexityMultiplier *= 0.75;
+        expression.update();
+      };
+      if (r < chance * expression.complexityMultiplier) {
+        if (r < 0.01) {
+          throw new LazyError("I just lost the game", [
+            { name: "Me too", callback }
+          ]);
+        }
+        LazyError.throwNew(errorTexts, callback);
       }
     }
   };
@@ -348,9 +345,7 @@
           const target = e.target;
           this.setContent(target.value);
         };
-        this.element.querySelector(
-          ".remove-expression"
-        ).onclick = this.remove;
+        this.element.querySelector(".remove-expression").onclick = this.remove;
         calculator2.addExpressionElement(this.element);
       }
       this.update(requestingExpression);
@@ -407,7 +402,7 @@
       this.update(requestingExpression);
       this.updateDirtyExpressions();
     }
-    remove() {
+    remove = () => {
       const calc = this.calculator;
       if (this.element) calc.removeExpressionElement(this.element);
       if (this.definedFunction) {
@@ -415,8 +410,9 @@
       } else if (this.definedVariable) {
         calc.globalContext.deleteGlobalVariable(this.definedVariable);
       }
+      console.log(this);
       this.updateDirtyExpressions();
-    }
+    };
     updateDirtyExpressions() {
       for (const user of this.usedBy) user.update();
       while (true) {
@@ -434,14 +430,10 @@
       this.hideError();
       this.hideResult();
       if (this.definedVariable) {
-        this.calculator.globalContext.deleteGlobalVariable(
-          this.definedVariable
-        );
+        this.calculator.globalContext.deleteGlobalVariable(this.definedVariable);
         this.definedVariable = null;
       } else if (this.definedFunction) {
-        this.calculator.globalContext.deleteGlobalFunction(
-          this.definedFunction
-        );
+        this.calculator.globalContext.deleteGlobalFunction(this.definedFunction);
         this.definedFunction = null;
       }
       try {
@@ -467,11 +459,7 @@
               return e;
             });
             if (groups.FNARGS)
-              this.updateFunction(
-                groups.FNNAME,
-                fnArgs,
-                groups.FNDEF
-              );
+              this.updateFunction(groups.FNNAME, fnArgs, groups.FNDEF);
           } else {
             this.updateVariable(
               requestingExpression,
@@ -505,9 +493,7 @@
       );
       this.calculator.globalContext.defineGlobalVariable(vrName, this);
       this.definedVariable = vrName;
-      this.showResult(
-        `${this.definedVariable} = ${getRoundedString(this.value)}`
-      );
+      this.showResult(`${this.definedVariable} = ${getRoundedString(this.value)}`);
     }
     updateExpression(requestingExpression) {
       this.expressionContent = this.expressionString;

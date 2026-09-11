@@ -52,8 +52,7 @@ export class Expression {
                 Expression.template.content.cloneNode(true) as HTMLElement
             ).querySelector(".expression")!;
 
-            this.resultElement =
-                this.element.querySelector(".expression-result")!;
+            this.resultElement = this.element.querySelector(".expression-result")!;
             if (this.resultElement === null)
                 throw new CalculatorError(
                     "Result element not found on expression template!",
@@ -76,9 +75,8 @@ export class Expression {
             };
 
             // Add a listener for removing the expression when the cross is clicked
-            this.element.querySelector<HTMLElement>(
-                ".remove-expression",
-            )!.onclick = this.remove;
+            this.element.querySelector<HTMLElement>(".remove-expression")!.onclick =
+                this.remove;
             // Add the graphical expression to the DOM
             calculator.addExpressionElement(this.element);
         }
@@ -158,16 +156,13 @@ export class Expression {
         this.resultElement?.classList.add("hidden");
     }
 
-    public setContent(
-        newContent: string,
-        requestingExpression: Expression = this,
-    ) {
+    public setContent(newContent: string, requestingExpression: Expression = this) {
         this.expressionString = newContent;
         this.update(requestingExpression);
         this.updateDirtyExpressions();
     }
 
-    private remove() {
+    private remove = () => {
         const calc = this.calculator;
 
         // Remove the element visual
@@ -180,8 +175,9 @@ export class Expression {
             calc.globalContext.deleteGlobalVariable(this.definedVariable);
         }
 
+        console.log(this);
         this.updateDirtyExpressions();
-    }
+    };
 
     private updateDirtyExpressions() {
         // Update all expressions that used this one
@@ -208,14 +204,10 @@ export class Expression {
 
         // Delete any old variable or function that this expression defined
         if (this.definedVariable) {
-            this.calculator.globalContext.deleteGlobalVariable(
-                this.definedVariable,
-            );
+            this.calculator.globalContext.deleteGlobalVariable(this.definedVariable);
             this.definedVariable = null;
         } else if (this.definedFunction) {
-            this.calculator.globalContext.deleteGlobalFunction(
-                this.definedFunction,
-            );
+            this.calculator.globalContext.deleteGlobalFunction(this.definedFunction);
             this.definedFunction = null;
         }
 
@@ -270,11 +262,7 @@ export class Expression {
                     if (groups.FNARGS)
                         // Was a function. Don't evaluate, just store in the global
                         // calculator context
-                        this.updateFunction(
-                            groups.FNNAME,
-                            fnArgs,
-                            groups.FNDEF,
-                        );
+                        this.updateFunction(groups.FNNAME, fnArgs, groups.FNDEF);
                 } else {
                     // Was a variable. Compute value, store self in global context
                     this.updateVariable(
@@ -330,9 +318,7 @@ export class Expression {
         this.definedVariable = vrName;
 
         // Show the result
-        this.showResult(
-            `${this.definedVariable} = ${getRoundedString(this.value)}`,
-        );
+        this.showResult(`${this.definedVariable} = ${getRoundedString(this.value)}`);
     }
 
     private updateExpression(requestingExpression: Expression) {
